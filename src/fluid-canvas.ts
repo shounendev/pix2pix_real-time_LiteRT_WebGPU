@@ -76,6 +76,7 @@ export class FluidCanvas extends LitElement {
 
   // Simulation parameters
   private gravity = -9.81;
+  private damping = 0.95;
   private dt = 1.0 / 60.0;
   private flipRatio = 0.9;
   private numPressureIters = 50;
@@ -176,8 +177,8 @@ export class FluidCanvas extends LitElement {
     const h = tankHeight / res;
     const density = 1000.0;
 
-    const relWaterHeight = 0.8;
-    const relWaterWidth = 0.6;
+    const relWaterHeight = 0.9;
+    const relWaterWidth = 1.0;
 
     const r = 0.3 * h;
     const dx = 2.0 * r;
@@ -206,7 +207,7 @@ export class FluidCanvas extends LitElement {
     for (let i = 0; i < f.fNumX; i++) {
       for (let j = 0; j < f.fNumY; j++) {
         let s = 1.0;
-        if (i === 0 || i === f.fNumX - 1 || j === 0) s = 0.0;
+        if (i === 0 || i === f.fNumX - 1) s = 0.0;
         f.s[i * n + j] = s;
       }
     }
@@ -375,8 +376,10 @@ export class FluidCanvas extends LitElement {
           const ci = i * n + j;
           const uc = (f.u[ci] + (i + 1 < f.fNumX ? f.u[(i + 1) * n + j] : 0.0)) * 0.5;
           const vc = (f.v[ci] + (j + 1 < f.fNumY ? f.v[i * n + j + 1] : 0.0)) * 0.5;
-          velColors[3 * ci]     = Math.min(uc * scale + 0.5, 1.0);  // R
-          velColors[3 * ci + 1] = Math.min(vc * scale + 0.5, 1.0);  // G
+          velColors[3 * ci]     = Math.min(-vc * scale + 0.5, 1.0);  // R
+          //velColors[3 * ci]     = 0;  // R
+          velColors[3 * ci + 1] = Math.min(-uc * scale + 0.5, 1.0);  // G
+          //velColors[3 * ci + 1]     = 0;  // R
           velColors[3 * ci + 2] = 0.0;                                    // B
         }
       }
@@ -463,7 +466,7 @@ export class FluidCanvas extends LitElement {
     gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.useProgram(ms);
     gl.uniform2f(gl.getUniformLocation(ms, 'domainSize'), this.simWidth, this.simHeight);
-    gl.uniform3f(gl.getUniformLocation(ms, 'color'), 1.0, 0.0, 0.0);
+    gl.uniform3f(gl.getUniformLocation(ms, 'color'), 0.0, 0.0, 0.0);
     gl.uniform2f(
         gl.getUniformLocation(ms, 'translation'), this.obstacleX,
         this.obstacleY);
@@ -487,7 +490,8 @@ export class FluidCanvas extends LitElement {
         this.dt, this.gravity, this.flipRatio, this.numPressureIters,
         this.numParticleIters, this.overRelaxation, this.compensateDrift,
         this.separateParticles, this.obstacleX, this.obstacleY,
-        this.obstacleRadius, this.obstacleVelX, this.obstacleVelY);
+        this.obstacleRadius, this.obstacleVelX, this.obstacleVelY,
+        this.damping);
     this.draw();
     this.rafId = requestAnimationFrame(() => this.runLoop());
   }
