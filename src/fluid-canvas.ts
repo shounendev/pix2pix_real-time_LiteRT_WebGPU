@@ -4,7 +4,7 @@
  */
 
 import {html, LitElement} from 'lit';
-import {customElement} from 'lit/decorators.js';
+import {customElement, state} from 'lit/decorators.js';
 import {createRef, ref} from 'lit/directives/ref.js';
 
 import {FlipFluid, AIR_CELL, FLUID_CELL, SOLID_CELL} from './flip-fluid.js';
@@ -12,9 +12,6 @@ import {FlipFluid, AIR_CELL, FLUID_CELL, SOLID_CELL} from './flip-fluid.js';
 /* tslint:disable:no-new-decorators */
 
 const CANVAS_SIZE = 512;
-const SIM_HEIGHT = 3.0;
-const cScale = CANVAS_SIZE / SIM_HEIGHT;
-const simWidth = CANVAS_SIZE / cScale;  // = SIM_HEIGHT (square domain)
 
 const pointVertexShaderSrc = `
   attribute vec2 attrPosition;
@@ -93,6 +90,13 @@ export class FluidCanvas extends LitElement {
   private obstacleVelY = 0.0;
   private showParticles = true;
   private showGrid = false;
+  private showVelocity = false;
+  private velScale = 1.0;
+  @state() private resSlider = 50;
+
+  private get simHeight() { return 3.0 * this.resSlider / 100; }
+  private get simWidth()  { return this.simHeight; }
+  private get cScale()    { return CANVAS_SIZE / this.simHeight; }
 
   // WebGL resources (null = not yet created)
   private pointShader: WebGLProgram|null = null;
@@ -101,6 +105,7 @@ export class FluidCanvas extends LitElement {
   private pointColorBuffer: WebGLBuffer|null = null;
   private gridVertBuffer: WebGLBuffer|null = null;
   private gridColorBuffer: WebGLBuffer|null = null;
+  private velColorBuffer: WebGLBuffer|null = null;
   private diskVertBuffer: WebGLBuffer|null = null;
   private diskIdBuffer: WebGLBuffer|null = null;
 
@@ -115,6 +120,9 @@ export class FluidCanvas extends LitElement {
     }
     this.gl = gl;
     this.setupScene();
+    this.setupGridBuffers();
+    this.setupVelocityBuffer();
+    this.setupParticleBuffers();
 
     // Register touchmove with passive:false so preventDefault() works
     canvas.addEventListener(
@@ -162,9 +170,9 @@ export class FluidCanvas extends LitElement {
     this.numPressureIters = 50;
     this.numParticleIters = 2;
 
-    const res = 100;
-    const tankHeight = SIM_HEIGHT;
-    const tankWidth = simWidth;
+    const res = this.resSlider;
+    const tankHeight = this.simHeight;
+    const tankWidth = this.simWidth;
     const h = tankHeight / res;
     const density = 1000.0;
 
@@ -240,6 +248,56 @@ export class FluidCanvas extends LitElement {
     this.obstacleVelY = vy;
   }
 
+  // ── Reinitialise on resolution change ────────────────────────────────────
+
+  private reinit() {
+    cancelAnimationFrame(this.rafId);
+    const gl = this.gl;
+    gl.deleteBuffer(this.gridVertBuffer);
+    gl.deleteBuffer(this.gridColorBuffer);
+    gl.deleteBuffer(this.velColorBuffer);
+    gl.deleteBuffer(this.pointVertexBuffer);
+    gl.deleteBuffer(this.pointColorBuffer);
+    this.gridVertBuffer = null;
+    this.gridColorBuffer = null;
+    this.velColorBuffer = null;
+    this.pointVertexBuffer = null;
+    this.pointColorBuffer = null;
+    this.setupScene();
+    this.setupGridBuffers();
+    this.setupVelocityBuffer();
+    this.setupParticleBuffers();
+    this.rafId = requestAnimationFrame(() => this.runLoop());
+  }
+
+  private setupGridBuffers() {
+    const gl = this.gl;
+    const f = this.fluid;
+    this.gridVertBuffer = gl.createBuffer()!;
+    const cellCenters = new Float32Array(2 * f.fNumCells);
+    let p = 0;
+    for (let i = 0; i < f.fNumX; i++) {
+      for (let j = 0; j < f.fNumY; j++) {
+        cellCenters[p++] = (i + 0.5) * f.h;
+        cellCenters[p++] = (j + 0.5) * f.h;
+      }
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.gridVertBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, cellCenters, gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    this.gridColorBuffer = gl.createBuffer()!;
+  }
+
+  private setupVelocityBuffer() {
+    this.velColorBuffer = this.gl.createBuffer()!;
+  }
+
+  private setupParticleBuffers() {
+    const gl = this.gl;
+    this.pointVertexBuffer = gl.createBuffer()!;
+    this.pointColorBuffer = gl.createBuffer()!;
+  }
+
   // ── WebGL rendering ───────────────────────────────────────────────────────
 
   private createGlShader(vsSource: string, fsSource: string): WebGLProgram {
@@ -283,26 +341,10 @@ export class FluidCanvas extends LitElement {
     const ms = this.meshShader;
 
     // ── Grid cell colours ────────────────────────────────────────────────
-    if (!this.gridVertBuffer) {
-      this.gridVertBuffer = gl.createBuffer()!;
-      const cellCenters = new Float32Array(2 * f.fNumCells);
-      let p = 0;
-      for (let i = 0; i < f.fNumX; i++) {
-        for (let j = 0; j < f.fNumY; j++) {
-          cellCenters[p++] = (i + 0.5) * f.h;
-          cellCenters[p++] = (j + 0.5) * f.h;
-        }
-      }
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.gridVertBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, cellCenters, gl.DYNAMIC_DRAW);
-      gl.bindBuffer(gl.ARRAY_BUFFER, null);
-    }
-    if (!this.gridColorBuffer) this.gridColorBuffer = gl.createBuffer()!;
-
     if (this.showGrid) {
-      const pointSize = 0.9 * f.h / simWidth * canvas.width;
+      const pointSize = 0.9 * f.h / this.simWidth * canvas.width;
       gl.useProgram(ps);
-      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), simWidth, SIM_HEIGHT);
+      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), this.simWidth, this.simHeight);
       gl.uniform1f(gl.getUniformLocation(ps, 'pointSize'), pointSize);
       gl.uniform1f(gl.getUniformLocation(ps, 'drawDisk'), 0.0);
 
@@ -323,17 +365,52 @@ export class FluidCanvas extends LitElement {
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
 
+    // ── Velocity colours ─────────────────────────────────────────────────
+    if (this.showVelocity) {
+      const n = f.fNumY;
+      const scale = this.velScale;
+      const velColors = new Float32Array(3 * f.fNumCells);
+      for (let i = 0; i < f.fNumX; i++) {
+        for (let j = 0; j < f.fNumY; j++) {
+          const ci = i * n + j;
+          const uc = (f.u[ci] + (i + 1 < f.fNumX ? f.u[(i + 1) * n + j] : 0.0)) * 0.5;
+          const vc = (f.v[ci] + (j + 1 < f.fNumY ? f.v[i * n + j + 1] : 0.0)) * 0.5;
+          velColors[3 * ci]     = Math.min(uc * scale + 0.5, 1.0);  // R
+          velColors[3 * ci + 1] = Math.min(vc * scale + 0.5, 1.0);  // G
+          velColors[3 * ci + 2] = 0.0;                                    // B
+        }
+      }
+      const pointSize = 0.9 * f.h / this.simWidth * canvas.width;
+      gl.useProgram(ps);
+      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), this.simWidth, this.simHeight);
+      gl.uniform1f(gl.getUniformLocation(ps, 'pointSize'), pointSize);
+      gl.uniform1f(gl.getUniformLocation(ps, 'drawDisk'), 0.0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.gridVertBuffer);
+      const vPosLoc = gl.getAttribLocation(ps, 'attrPosition');
+      gl.enableVertexAttribArray(vPosLoc);
+      gl.vertexAttribPointer(vPosLoc, 2, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.velColorBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, velColors, gl.DYNAMIC_DRAW);
+      const vColorLoc = gl.getAttribLocation(ps, 'attrColor');
+      gl.enableVertexAttribArray(vColorLoc);
+      gl.vertexAttribPointer(vColorLoc, 3, gl.FLOAT, false, 0, 0);
+
+      gl.drawArrays(gl.POINTS, 0, f.fNumCells);
+      gl.disableVertexAttribArray(vPosLoc);
+      gl.disableVertexAttribArray(vColorLoc);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    }
+
     // ── Particles ────────────────────────────────────────────────────────
     if (this.showParticles) {
       gl.clear(gl.DEPTH_BUFFER_BIT);
-      const pointSize = 2.0 * f.particleRadius / simWidth * canvas.width;
+      const pointSize = 2.0 * f.particleRadius / this.simWidth * canvas.width;
       gl.useProgram(ps);
-      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), simWidth, SIM_HEIGHT);
+      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), this.simWidth, this.simHeight);
       gl.uniform1f(gl.getUniformLocation(ps, 'pointSize'), pointSize);
       gl.uniform1f(gl.getUniformLocation(ps, 'drawDisk'), 1.0);
-
-      if (!this.pointVertexBuffer) this.pointVertexBuffer = gl.createBuffer()!;
-      if (!this.pointColorBuffer) this.pointColorBuffer = gl.createBuffer()!;
 
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointVertexBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, f.particlePos, gl.DYNAMIC_DRAW);
@@ -385,7 +462,7 @@ export class FluidCanvas extends LitElement {
 
     gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.useProgram(ms);
-    gl.uniform2f(gl.getUniformLocation(ms, 'domainSize'), simWidth, SIM_HEIGHT);
+    gl.uniform2f(gl.getUniformLocation(ms, 'domainSize'), this.simWidth, this.simHeight);
     gl.uniform3f(gl.getUniformLocation(ms, 'color'), 1.0, 0.0, 0.0);
     gl.uniform2f(
         gl.getUniformLocation(ms, 'translation'), this.obstacleX,
@@ -421,8 +498,8 @@ export class FluidCanvas extends LitElement {
     const canvas = this.canvasRef.value!;
     const bounds = canvas.getBoundingClientRect();
     // Map from CSS pixels to simulation coordinates; flip Y (WebGL origin at bottom)
-    const x = ((clientX - bounds.left) / bounds.width) * simWidth;
-    const y = (1.0 - (clientY - bounds.top) / bounds.height) * SIM_HEIGHT;
+    const x = ((clientX - bounds.left) / bounds.width) * this.simWidth;
+    const y = (1.0 - (clientY - bounds.top) / bounds.height) * this.simHeight;
     this.mouseDown = true;
     this.setObstacle(x, y, true);
   }
@@ -431,8 +508,8 @@ export class FluidCanvas extends LitElement {
     if (!this.mouseDown) return;
     const canvas = this.canvasRef.value!;
     const bounds = canvas.getBoundingClientRect();
-    const x = ((clientX - bounds.left) / bounds.width) * simWidth;
-    const y = (1.0 - (clientY - bounds.top) / bounds.height) * SIM_HEIGHT;
+    const x = ((clientX - bounds.left) / bounds.width) * this.simWidth;
+    const y = (1.0 - (clientY - bounds.top) / bounds.height) * this.simHeight;
     this.setObstacle(x, y, false);
   }
 
@@ -474,6 +551,14 @@ export class FluidCanvas extends LitElement {
           Grid
         </label>
         <label>
+          <input type="checkbox" ?checked=${this.showVelocity}
+            @change=${(e: Event) => { this.showVelocity = (e.target as HTMLInputElement).checked; }}>
+          Velocity
+        </label>
+        <input type="range" min="0.001" max="2" step="0.001" .value=${String(Math.round(this.velScale * 2))}
+          @change=${(e: Event) => { this.velScale = (e.target as HTMLInputElement).valueAsNumber; }}>
+        <span>×${this.velScale.toFixed(1)}</span>
+        <label>
           <input type="checkbox" ?checked=${this.compensateDrift}
             @change=${(e: Event) => { this.compensateDrift = (e.target as HTMLInputElement).checked; }}>
           Drift
@@ -487,6 +572,14 @@ export class FluidCanvas extends LitElement {
         <input type="range" min="0" max="10" value="9"
           @change=${(e: Event) => { this.flipRatio = 0.1 * (e.target as HTMLInputElement).valueAsNumber; }}>
         <span>FLIP</span>
+        <label>Sim Res</label>
+        <input type="range" min="10" max="100" step="10"
+          .value=${String(this.resSlider)}
+          @change=${(e: Event) => {
+            this.resSlider = Number((e.target as HTMLInputElement).value);
+            this.reinit();
+          }}>
+        <span>${this.resSlider}%</span>
       </div>
       <canvas
         ${ref(this.canvasRef)}
