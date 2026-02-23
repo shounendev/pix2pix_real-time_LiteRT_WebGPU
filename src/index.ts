@@ -4,8 +4,8 @@ import {customElement, state} from 'lit/decorators.js';
 import {createRef, ref} from 'lit/directives/ref.js';
 
 import {MODEL_URL} from './constants';
-import './drawing-canvas.js';
-import {DrawingCanvas} from './drawing-canvas.js';
+import './fluid-canvas.js';
+import {FluidCanvas} from './fluid-canvas.js';
 import {runPix2Pix} from './pix2pix';
 import {componentStyles} from './styles';
 
@@ -22,7 +22,7 @@ export class Pix2PixMaps extends LitElement {
   @state() private inferenceMs: number|null = null;
   @state() private totalMs: number|null = null;
 
-  private drawingCanvasRef = createRef<DrawingCanvas>();
+  private drawingCanvasRef = createRef<FluidCanvas>();
 
   override async firstUpdated() {
     try {
@@ -51,7 +51,7 @@ export class Pix2PixMaps extends LitElement {
       this.statusMessage = 'Downloading & compiling model (208 MB)...';
       const compileOptions = {accelerator: 'webgpu'} as const;
       this.model = await loadAndCompile(MODEL_URL, compileOptions);
-      this.statusMessage = 'Ready. Draw on the canvas and click "Start".';
+      this.statusMessage = 'Ready. Drag on the fluid canvas and click "Start".';
     } catch (e) {
       this.statusMessage = `Error loading model: ${(e as Error).message}`;
       console.error(e);
@@ -116,8 +116,8 @@ export class Pix2PixMaps extends LitElement {
 
         <div class="image-pair">
           <div class="image-slot">
-            <h3>Draw Input</h3>
-            <drawing-canvas ${ref(this.drawingCanvasRef)}></drawing-canvas>
+            <h3>Fluid Input</h3>
+            <fluid-canvas ${ref(this.drawingCanvasRef)}></fluid-canvas>
           </div>
 
           <div class="result-zone">
