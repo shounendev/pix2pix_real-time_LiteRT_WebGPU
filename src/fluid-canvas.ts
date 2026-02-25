@@ -12,17 +12,21 @@ import {FlipFluid, AIR_CELL, FLUID_CELL, SOLID_CELL} from './flip-fluid.js';
 /* tslint:disable:no-new-decorators */
 
 const CANVAS_SIZE = 512;
+const CROP_CELLS = 2;
 
 const pointVertexShaderSrc = `
   attribute vec2 attrPosition;
   attribute vec3 attrColor;
   uniform vec2 domainSize;
+  uniform vec2 domainOffset;
   uniform float pointSize;
   uniform float drawDisk;
   varying vec3 fragColor;
   varying float fragDrawDisk;
   void main() {
-    vec4 t = vec4(2.0 / domainSize.x, 2.0 / domainSize.y, -1.0, -1.0);
+    vec4 t = vec4(2.0 / domainSize.x, 2.0 / domainSize.y,
+                  -(domainOffset.x * 2.0 / domainSize.x + 1.0),
+                  -(domainOffset.y * 2.0 / domainSize.y + 1.0));
     gl_Position = vec4(attrPosition * t.xy + t.zw, 0.0, 1.0);
     gl_PointSize = pointSize;
     fragColor = attrColor;
@@ -47,13 +51,16 @@ const pointFragmentShaderSrc = `
 const meshVertexShaderSrc = `
   attribute vec2 attrPosition;
   uniform vec2 domainSize;
+  uniform vec2 domainOffset;
   uniform vec3 color;
   uniform vec2 translation;
   uniform float scale;
   varying vec3 fragColor;
   void main() {
     vec2 v = translation + attrPosition * scale;
-    vec4 t = vec4(2.0 / domainSize.x, 2.0 / domainSize.y, -1.0, -1.0);
+    vec4 t = vec4(2.0 / domainSize.x, 2.0 / domainSize.y,
+                  -(domainOffset.x * 2.0 / domainSize.x + 1.0),
+                  -(domainOffset.y * 2.0 / domainSize.y + 1.0));
     gl_Position = vec4(v * t.xy + t.zw, 0.0, 1.0);
     fragColor = color;
   }
@@ -86,18 +93,25 @@ export class FluidCanvas extends LitElement {
   private separateParticles = true;
   private obstacleX = 0.0;
   private obstacleY = 0.0;
-  private obstacleRadius = 0.15;
+  private obstacleScreenFraction = 0.1;
+  private get obstacleRadius() { return this.obstacleScreenFraction * this.simHeight; }
   private obstacleVelX = 0.0;
   private obstacleVelY = 0.0;
   private showParticles = true;
   private showGrid = false;
   private showVelocity = false;
+  private particleVelColor = false;
   private velScale = 1.0;
   @state() private resSlider = 50;
+  @state() private particlePercent = 100;
+  @state() private paused = false;
 
   private get simHeight() { return 3.0 * this.resSlider / 100; }
   private get simWidth()  { return this.simHeight; }
-  private get cScale()    { return CANVAS_SIZE / this.simHeight; }
+  private get cropOffset() { return CROP_CELLS * this.fluid.h; }
+  private get visibleWidth() { return this.simWidth - 2 * this.cropOffset; }
+  private get visibleHeight() { return this.simHeight - 2 * this.cropOffset; }
+  private get cScale()    { return CANVAS_SIZE / this.visibleHeight; }
 
   // WebGL resources (null = not yet created)
   private pointShader: WebGLProgram|null = null;
@@ -165,7 +179,6 @@ export class FluidCanvas extends LitElement {
   // ── Simulation setup ──────────────────────────────────────────────────────
 
   private setupScene() {
-    this.obstacleRadius = 0.15;
     this.overRelaxation = 1.9;
     this.dt = 1.0 / 60.0;
     this.numPressureIters = 50;
@@ -343,9 +356,10 @@ export class FluidCanvas extends LitElement {
 
     // ── Grid cell colours ────────────────────────────────────────────────
     if (this.showGrid) {
-      const pointSize = 0.9 * f.h / this.simWidth * canvas.width;
+      const pointSize = 0.9 * f.h / this.visibleWidth * canvas.width;
       gl.useProgram(ps);
-      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), this.simWidth, this.simHeight);
+      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), this.visibleWidth, this.visibleHeight);
+      gl.uniform2f(gl.getUniformLocation(ps, 'domainOffset'), this.cropOffset, this.cropOffset);
       gl.uniform1f(gl.getUniformLocation(ps, 'pointSize'), pointSize);
       gl.uniform1f(gl.getUniformLocation(ps, 'drawDisk'), 0.0);
 
@@ -383,9 +397,10 @@ export class FluidCanvas extends LitElement {
           velColors[3 * ci + 2] = 0.0;                                    // B
         }
       }
-      const pointSize = 0.9 * f.h / this.simWidth * canvas.width;
+      const pointSize = 0.9 * f.h / this.visibleWidth * canvas.width;
       gl.useProgram(ps);
-      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), this.simWidth, this.simHeight);
+      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), this.visibleWidth, this.visibleHeight);
+      gl.uniform2f(gl.getUniformLocation(ps, 'domainOffset'), this.cropOffset, this.cropOffset);
       gl.uniform1f(gl.getUniformLocation(ps, 'pointSize'), pointSize);
       gl.uniform1f(gl.getUniformLocation(ps, 'drawDisk'), 0.0);
 
@@ -409,25 +424,65 @@ export class FluidCanvas extends LitElement {
     // ── Particles ────────────────────────────────────────────────────────
     if (this.showParticles) {
       gl.clear(gl.DEPTH_BUFFER_BIT);
-      const pointSize = 2.0 * f.particleRadius / this.simWidth * canvas.width;
+      const pointSize = 2.0 * f.particleRadius / this.visibleWidth * canvas.width;
       gl.useProgram(ps);
-      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), this.simWidth, this.simHeight);
+      gl.uniform2f(gl.getUniformLocation(ps, 'domainSize'), this.visibleWidth, this.visibleHeight);
+      gl.uniform2f(gl.getUniformLocation(ps, 'domainOffset'), this.cropOffset, this.cropOffset);
       gl.uniform1f(gl.getUniformLocation(ps, 'pointSize'), pointSize);
       gl.uniform1f(gl.getUniformLocation(ps, 'drawDisk'), 1.0);
 
+      // Compute step from percentage (e.g. 50% → every 2nd particle)
+      const step = this.particlePercent >= 100 ? 1 : Math.max(1, Math.round(100 / this.particlePercent));
+      const drawCount = step === 1 ? f.numParticles : Math.ceil(f.numParticles / step);
+
+      let drawPos: Float32Array;
+      let drawColors: Float32Array;
+
+      // Build base colours (velocity or density)
+      let particleColors = f.particleColor;
+      if (this.particleVelColor) {
+        const scale = this.velScale;
+        const n = f.numParticles;
+        const velColors = new Float32Array(3 * n);
+        for (let i = 0; i < n; i++) {
+          const vx = f.particleVel[2 * i];
+          const vy = f.particleVel[2 * i + 1];
+          velColors[3 * i]     = Math.max(0.0, Math.min(-vy * scale + 0.5, 1.0));
+          velColors[3 * i + 1] = Math.max(0.0, Math.min(-vx * scale + 0.5, 1.0));
+          velColors[3 * i + 2] = 0.0;
+        }
+        particleColors = velColors;
+      }
+
+      if (step === 1) {
+        drawPos = f.particlePos;
+        drawColors = particleColors;
+      } else {
+        // Pick every nth particle
+        drawPos = new Float32Array(2 * drawCount);
+        drawColors = new Float32Array(3 * drawCount);
+        for (let i = 0, src = 0; src < f.numParticles; src += step, i++) {
+          drawPos[2 * i]     = f.particlePos[2 * src];
+          drawPos[2 * i + 1] = f.particlePos[2 * src + 1];
+          drawColors[3 * i]     = particleColors[3 * src];
+          drawColors[3 * i + 1] = particleColors[3 * src + 1];
+          drawColors[3 * i + 2] = particleColors[3 * src + 2];
+        }
+      }
+
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointVertexBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, f.particlePos, gl.DYNAMIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, drawPos, gl.DYNAMIC_DRAW);
       const pPosLoc = gl.getAttribLocation(ps, 'attrPosition');
       gl.enableVertexAttribArray(pPosLoc);
       gl.vertexAttribPointer(pPosLoc, 2, gl.FLOAT, false, 0, 0);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, this.pointColorBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, f.particleColor, gl.DYNAMIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, drawColors, gl.DYNAMIC_DRAW);
       const pColorLoc = gl.getAttribLocation(ps, 'attrColor');
       gl.enableVertexAttribArray(pColorLoc);
       gl.vertexAttribPointer(pColorLoc, 3, gl.FLOAT, false, 0, 0);
 
-      gl.drawArrays(gl.POINTS, 0, f.numParticles);
+      gl.drawArrays(gl.POINTS, 0, drawCount);
       gl.disableVertexAttribArray(pPosLoc);
       gl.disableVertexAttribArray(pColorLoc);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -465,7 +520,8 @@ export class FluidCanvas extends LitElement {
 
     gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.useProgram(ms);
-    gl.uniform2f(gl.getUniformLocation(ms, 'domainSize'), this.simWidth, this.simHeight);
+    gl.uniform2f(gl.getUniformLocation(ms, 'domainSize'), this.visibleWidth, this.visibleHeight);
+    gl.uniform2f(gl.getUniformLocation(ms, 'domainOffset'), this.cropOffset, this.cropOffset);
     gl.uniform3f(gl.getUniformLocation(ms, 'color'), 0.0, 0.0, 0.0);
     gl.uniform2f(
         gl.getUniformLocation(ms, 'translation'), this.obstacleX,
@@ -486,12 +542,14 @@ export class FluidCanvas extends LitElement {
   // ── Main loop ─────────────────────────────────────────────────────────────
 
   private runLoop() {
-    this.fluid.simulate(
-        this.dt, this.gravity, this.flipRatio, this.numPressureIters,
-        this.numParticleIters, this.overRelaxation, this.compensateDrift,
-        this.separateParticles, this.obstacleX, this.obstacleY,
-        this.obstacleRadius, this.obstacleVelX, this.obstacleVelY,
-        this.damping);
+    if (!this.paused) {
+      this.fluid.simulate(
+          this.dt, this.gravity, this.flipRatio, this.numPressureIters,
+          this.numParticleIters, this.overRelaxation, this.compensateDrift,
+          this.separateParticles, this.obstacleX, this.obstacleY,
+          this.obstacleRadius, this.obstacleVelX, this.obstacleVelY,
+          this.damping);
+    }
     this.draw();
     this.rafId = requestAnimationFrame(() => this.runLoop());
   }
@@ -502,8 +560,8 @@ export class FluidCanvas extends LitElement {
     const canvas = this.canvasRef.value!;
     const bounds = canvas.getBoundingClientRect();
     // Map from CSS pixels to simulation coordinates; flip Y (WebGL origin at bottom)
-    const x = ((clientX - bounds.left) / bounds.width) * this.simWidth;
-    const y = (1.0 - (clientY - bounds.top) / bounds.height) * this.simHeight;
+    const x = ((clientX - bounds.left) / bounds.width) * this.visibleWidth + this.cropOffset;
+    const y = (1.0 - (clientY - bounds.top) / bounds.height) * this.visibleHeight + this.cropOffset;
     this.mouseDown = true;
     this.setObstacle(x, y, true);
   }
@@ -512,8 +570,8 @@ export class FluidCanvas extends LitElement {
     if (!this.mouseDown) return;
     const canvas = this.canvasRef.value!;
     const bounds = canvas.getBoundingClientRect();
-    const x = ((clientX - bounds.left) / bounds.width) * this.simWidth;
-    const y = (1.0 - (clientY - bounds.top) / bounds.height) * this.simHeight;
+    const x = ((clientX - bounds.left) / bounds.width) * this.visibleWidth + this.cropOffset;
+    const y = (1.0 - (clientY - bounds.top) / bounds.height) * this.visibleHeight + this.cropOffset;
     this.setObstacle(x, y, false);
   }
 
@@ -542,8 +600,14 @@ export class FluidCanvas extends LitElement {
         }
         .fluid-controls label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
         .fluid-controls input[type=range] { width: 60px; }
+        .fluid-controls button {
+          font-size: 12px; padding: 1px 8px; cursor: pointer;
+        }
       </style>
       <div class="fluid-controls">
+        <button @click=${() => { this.paused = !this.paused; }}>
+          ${this.paused ? 'Resume' : 'Pause'}
+        </button>
         <label>
           <input type="checkbox" ?checked=${this.showParticles}
             @change=${(e: Event) => { this.showParticles = (e.target as HTMLInputElement).checked; }}>
@@ -559,8 +623,13 @@ export class FluidCanvas extends LitElement {
             @change=${(e: Event) => { this.showVelocity = (e.target as HTMLInputElement).checked; }}>
           Velocity
         </label>
-        <input type="range" min="0.001" max="2" step="0.001" .value=${String(Math.round(this.velScale * 2))}
-          @change=${(e: Event) => { this.velScale = (e.target as HTMLInputElement).valueAsNumber; }}>
+        <label>
+          <input type="checkbox" ?checked=${this.particleVelColor}
+            @change=${(e: Event) => { this.particleVelColor = (e.target as HTMLInputElement).checked; }}>
+          Vel Color
+        </label>
+        <input type="range" min="0.001" max="1" step="0.001" .value=${String(Math.round(this.velScale * 2))}
+          @input=${(e: Event) => { this.velScale = (e.target as HTMLInputElement).valueAsNumber; }}>
         <span>×${this.velScale.toFixed(1)}</span>
         <label>
           <input type="checkbox" ?checked=${this.compensateDrift}
@@ -576,6 +645,13 @@ export class FluidCanvas extends LitElement {
         <input type="range" min="0" max="10" value="9"
           @change=${(e: Event) => { this.flipRatio = 0.1 * (e.target as HTMLInputElement).valueAsNumber; }}>
         <span>FLIP</span>
+        <label>Particles</label>
+        <input type="range" min="1" max="100" step="1"
+          .value=${String(this.particlePercent)}
+          @input=${(e: Event) => {
+            this.particlePercent = Number((e.target as HTMLInputElement).value);
+          }}>
+        <span>${this.particlePercent}%</span>
         <label>Sim Res</label>
         <input type="range" min="10" max="100" step="10"
           .value=${String(this.resSlider)}

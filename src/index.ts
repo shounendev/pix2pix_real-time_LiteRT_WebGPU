@@ -3,7 +3,7 @@ import {html, LitElement} from 'lit';
 import {customElement, state} from 'lit/decorators.js';
 import {createRef, ref} from 'lit/directives/ref.js';
 
-import {MODEL_URL} from './constants';
+import {DEFAULT_MODEL_URL, MODELS} from './constants';
 import './fluid-canvas.js';
 import {FluidCanvas} from './fluid-canvas.js';
 import {runPix2Pix} from './pix2pix';
@@ -22,6 +22,7 @@ export class Pix2PixMaps extends LitElement {
   @state() private inferenceMs: number|null = null;
   @state() private totalMs: number|null = null;
   @state() private inputSource: 'fluid'|'image' = 'fluid';
+  @state() private modelUrl = DEFAULT_MODEL_URL;
   @state() private uploadedCanvas: HTMLCanvasElement|null = null;
 
   private drawingCanvasRef = createRef<FluidCanvas>();
@@ -53,7 +54,7 @@ export class Pix2PixMaps extends LitElement {
     try {
       this.statusMessage = 'Downloading & compiling model (208 MB)...';
       const compileOptions = {accelerator: 'webgpu'} as const;
-      this.model = await loadAndCompile(MODEL_URL, compileOptions);
+      this.model = await loadAndCompile(this.modelUrl, compileOptions);
       this.statusMessage = 'Ready. Drag on the fluid canvas and click "Start".';
     } catch (e) {
       this.statusMessage = `Error loading model: ${(e as Error).message}`;
@@ -127,6 +128,15 @@ export class Pix2PixMaps extends LitElement {
     this.statusMessage = 'Stopped.';
   }
 
+  private async handleModelChange(e: Event) {
+    const url = (e.target as HTMLSelectElement).value;
+    if (url === this.modelUrl) return;
+    this.isRunning = false;
+    this.model = null;
+    this.modelUrl = url;
+    await this.loadModel();
+  }
+
   private handleClear() {
     this.drawingCanvasRef.value!.clear();
   }
@@ -148,6 +158,13 @@ export class Pix2PixMaps extends LitElement {
         <h1>LiteRT.js Pix2Pix Maps</h1>
         <div class="controls">
           <div class="control-group">
+            <select @change=${this.handleModelChange}>
+              ${MODELS.map(m => html`
+                <option value=${m.url} .selected=${m.url === this.modelUrl}>
+                  ${m.label}
+                </option>
+              `)}
+            </select>
             <button @click=${this.handleClear} .disabled=${this.inputSource === 'image'}>
               Clear
             </button>
