@@ -83,7 +83,7 @@ export class FluidCanvas extends LitElement {
 
   // Simulation parameters
   private gravity = -9.81;
-  private damping = 0.95;
+  private damping = 0.01;
   private dt = 1.0 / 60.0;
   private flipRatio = 0.9;
   private numPressureIters = 50;
@@ -105,6 +105,7 @@ export class FluidCanvas extends LitElement {
   @state() private resSlider = 50;
   @state() private particlePercent = 100;
   @state() private paused = false;
+  @state() private gravitySlider = -9.81;
 
   private get simHeight() { return 3.0 * this.resSlider / 100; }
   private get simWidth()  { return this.simHeight; }
@@ -190,7 +191,7 @@ export class FluidCanvas extends LitElement {
     const h = tankHeight / res;
     const density = 1000.0;
 
-    const relWaterHeight = 0.9;
+    const relWaterHeight = 0.85;
     const relWaterWidth = 1.0;
 
     const r = 0.3 * h;
@@ -544,7 +545,7 @@ export class FluidCanvas extends LitElement {
   private runLoop() {
     if (!this.paused) {
       this.fluid.simulate(
-          this.dt, this.gravity, this.flipRatio, this.numPressureIters,
+          this.dt, this.gravitySlider, this.flipRatio, this.numPressureIters,
           this.numParticleIters, this.overRelaxation, this.compensateDrift,
           this.separateParticles, this.obstacleX, this.obstacleY,
           this.obstacleRadius, this.obstacleVelX, this.obstacleVelY,
@@ -660,6 +661,13 @@ export class FluidCanvas extends LitElement {
             this.reinit();
           }}>
         <span>${this.resSlider}%</span>
+        <label>Gravity</label>
+        <input type="range" min="-20" max="20" step="0.1"
+          .value=${String(this.gravitySlider)}
+          @input=${(e: Event) => {
+            this.gravitySlider = (e.target as HTMLInputElement).valueAsNumber;
+          }}>
+        <span>${this.gravitySlider.toFixed(1)}</span>
       </div>
       <canvas
         ${ref(this.canvasRef)}

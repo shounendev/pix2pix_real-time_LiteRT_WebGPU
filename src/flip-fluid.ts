@@ -102,8 +102,8 @@ export class FlipFluid {
   integrateParticles(dt: number, gravity: number, damping: number) {
     for (let i = 0; i < this.numParticles; i++) {
       this.particleVel[2 * i + 1] += dt * gravity;
-      this.particleVel[2 * i] *= damping;
-      this.particleVel[2 * i + 1] *= damping;
+      this.particleVel[2 * i] -= this.particleVel[2 * i] * this.particleVel[2 * i] * damping * Math.sign(this.particleVel[2 * i]);
+      this.particleVel[2 * i + 1] -= this.particleVel[2 * i + 1] * this.particleVel[2 * i + 1] * damping * Math.sign(this.particleVel[2 * i + 1]);
       this.particlePos[2 * i] += this.particleVel[2 * i] * dt;
       this.particlePos[2 * i + 1] += this.particleVel[2 * i + 1] * dt;
     }
@@ -217,8 +217,23 @@ export class FlipFluid {
       const d2 = dx * dx + dy * dy;
 
       if (d2 < minDist2) {
-        this.particleVel[2 * i] = obstacleVelX;
-        this.particleVel[2 * i + 1] = obstacleVelY;
+        let vx = this.particleVel[2 * i];
+        let vy = this.particleVel[2 * i + 1];
+
+        // add velocity of moving obstacel
+        this.particleVel[2 * i] += obstacleVelX;
+        this.particleVel[2 * i + 1] += obstacleVelY;
+
+        // obstacle normal
+        let d = Math.sqrt(d2);
+        let nx = dx / d
+        let ny = dy / d
+
+        x += nx * (minDist - d) * 1;
+        y += ny * (minDist - d) * 1;
+
+        this.particleVel[2 * i] -= nx * d2 *3;
+        this.particleVel[2 * i + 1] -= ny * d2*3;
       }
 
       if (x < minX) {
@@ -579,6 +594,8 @@ export class FlipFluid {
       this.solveIncompressibility(
           numPressureIters, sdt, overRelaxation, compensateDrift);
       this.transferVelocities(false, flipRatio);
+      this.handleParticleCollisions(
+          obstacleX, obstacleY, obstacleRadius, obstacleVelX, obstacleVelY);
     }
 
     this.updateParticleColors();
