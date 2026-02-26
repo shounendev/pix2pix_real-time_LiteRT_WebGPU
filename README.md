@@ -5,7 +5,7 @@ Setup:
 1. install git lfs
 
 2. install dependacies
-$ npm install
+`$ npm install`
 
 3. run porject
-$ npm run dev
+`$ npm run dev`
