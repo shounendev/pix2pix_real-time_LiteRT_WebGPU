@@ -9,7 +9,11 @@ This project was tested using `node v20.20.0` and `npm 10.8.2`
 ```bash
 $ npm install
 ```
-3. run porject
+3. if git lfs is not installed bfore you coloned to repo
+```bash
+$ git lfs fetch --all && git lfs checkout
+```
+4. run porject
 ```bash
 $ npm run dev
 ```
