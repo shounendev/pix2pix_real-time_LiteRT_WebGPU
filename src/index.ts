@@ -3,9 +3,9 @@ import {html, LitElement} from 'lit';
 import {customElement, state} from 'lit/decorators.js';
 import {createRef, ref} from 'lit/directives/ref.js';
 
-import {MODEL_URL} from './constants';
-import './drawing-canvas.js';
-import {DrawingCanvas} from './drawing-canvas.js';
+import {DEFAULT_MODEL_URL, MODELS} from './constants';
+import './fluid-canvas.js';
+import {FluidCanvas} from './fluid-canvas.js';
 import {runPix2Pix} from './pix2pix';
 import {componentStyles} from './styles';
 
@@ -21,8 +21,12 @@ export class Pix2PixMaps extends LitElement {
   @state() private model: CompiledModel|null = null;
   @state() private inferenceMs: number|null = null;
   @state() private totalMs: number|null = null;
+  @state() private inputSource: 'fluid'|'image' = 'fluid';
+  @state() private modelUrl = DEFAULT_MODEL_URL;
+  @state() private uploadedCanvas: HTMLCanvasElement|null = null;
 
-  private drawingCanvasRef = createRef<DrawingCanvas>();
+  private drawingCanvasRef = createRef<FluidCanvas>();
+  private fileInputRef = createRef<HTMLInputElement>();
 
   override async firstUpdated() {
     try {
@@ -50,8 +54,8 @@ export class Pix2PixMaps extends LitElement {
     try {
       this.statusMessage = 'Downloading & compiling model (208 MB)...';
       const compileOptions = {accelerator: 'webgpu'} as const;
-      this.model = await loadAndCompile(MODEL_URL, compileOptions);
-      this.statusMessage = 'Ready. Draw on the canvas and click "Start".';
+      this.model = await loadAndCompile(this.modelUrl, compileOptions);
+      this.statusMessage = 'Ready. Drag on the fluid canvas and click "Start".';
     } catch (e) {
       this.statusMessage = `Error loading model: ${(e as Error).message}`;
       console.error(e);
@@ -67,9 +71,42 @@ export class Pix2PixMaps extends LitElement {
     }
   }
 
+  private handleUploadClick() {
+    this.fileInputRef.value!.click();
+  }
+
+  private handleFileChange(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, 512, 512);
+        this.uploadedCanvas = canvas;
+        this.inputSource = 'image';
+      };
+      img.src = ev.target!.result as string;
+    };
+    reader.readAsDataURL(file);
+    // Reset so the same file can be re-selected
+    (e.target as HTMLInputElement).value = '';
+  }
+
+  private handleClearUpload() {
+    this.uploadedCanvas = null;
+    this.inputSource = 'fluid';
+  }
+
   private async runLoop() {
     while (this.isRunning && this.model) {
-      const canvas = this.drawingCanvasRef.value!.getCanvas();
+      const canvas = this.inputSource === 'image' && this.uploadedCanvas
+          ? this.uploadedCanvas
+          : this.drawingCanvasRef.value!.getCanvas();
       try {
         const {canvas: outCanvas, inferenceMs, totalMs} = await runPix2Pix({
           inputImage: canvas,
@@ -91,6 +128,15 @@ export class Pix2PixMaps extends LitElement {
     this.statusMessage = 'Stopped.';
   }
 
+  private async handleModelChange(e: Event) {
+    const url = (e.target as HTMLSelectElement).value;
+    if (url === this.modelUrl) return;
+    this.isRunning = false;
+    this.model = null;
+    this.modelUrl = url;
+    await this.loadModel();
+  }
+
   private handleClear() {
     this.drawingCanvasRef.value!.clear();
   }
@@ -101,12 +147,29 @@ export class Pix2PixMaps extends LitElement {
 
   override render() {
     return html`
+      <input
+        type="file"
+        accept="image/*"
+        style="display:none"
+        ${ref(this.fileInputRef)}
+        @change=${this.handleFileChange}
+      />
       <div class="container">
         <h1>LiteRT.js Pix2Pix Maps</h1>
         <div class="controls">
           <div class="control-group">
-            <button @click=${this.handleClear}>
+            <select @change=${this.handleModelChange}>
+              ${MODELS.map(m => html`
+                <option value=${m.url} .selected=${m.url === this.modelUrl}>
+                  ${m.label}
+                </option>
+              `)}
+            </select>
+            <button @click=${this.handleClear} .disabled=${this.inputSource === 'image'}>
               Clear
+            </button>
+            <button @click=${this.handleUploadClick}>
+              Upload Image
             </button>
             <button @click=${this.handleToggle} .disabled=${!this.canStart}>
               ${this.isRunning ? 'Stop' : 'Start'}
@@ -116,8 +179,13 @@ export class Pix2PixMaps extends LitElement {
 
         <div class="image-pair">
           <div class="image-slot">
-            <h3>Draw Input</h3>
-            <drawing-canvas ${ref(this.drawingCanvasRef)}></drawing-canvas>
+            <h3>${this.inputSource === 'image' ? 'Uploaded Image' : 'Fluid Input'}</h3>
+            ${this.inputSource === 'image' && this.uploadedCanvas ? html`
+              <div class="drop-zone">
+                ${this.uploadedCanvas}
+                <p><a href="#" @click=${(e: Event) => { e.preventDefault(); this.handleClearUpload(); }}>Clear — return to fluid simulation</a></p>
+              </div>
+            ` : html`<fluid-canvas ${ref(this.drawingCanvasRef)}></fluid-canvas>`}
           </div>
 
           <div class="result-zone">
