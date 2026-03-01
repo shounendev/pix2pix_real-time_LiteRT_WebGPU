@@ -2,8 +2,8 @@
 This is a project to test the viability of a single-purpose neural-network-model for achieving complex graphical effects in web-based real-time applications.
 
 # Setup:
-This project was tested using `node v20.20.0` and `npm 10.8.2` 
 ## Node server
+This project was tested using `node v20.20.0` and `npm 10.8.2` 
 1. install git lfs
 2. install dependacies
 ```bash
