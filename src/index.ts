@@ -155,7 +155,7 @@ export class Pix2PixMaps extends LitElement {
         @change=${this.handleFileChange}
       />
       <div class="container">
-        <h1>LiteRT.js Pix2Pix Maps</h1>
+        <h1>LiteRT.js Pix2Pix </h1>
         <div class="controls">
           <div class="control-group">
             <select @change=${this.handleModelChange}>

@@ -91,8 +91,8 @@ export class FluidCanvas extends LitElement {
   private overRelaxation = 1.9;
   private compensateDrift = true;
   private separateParticles = true;
-  private obstacleX = 0.0;
-  private obstacleY = 0.0;
+  private obstacleX = 0.75;
+  private obstacleY = 0.75;
   private obstacleScreenFraction = 0.1;
   private get obstacleRadius() { return this.obstacleScreenFraction * this.simHeight; }
   private obstacleVelX = 0.0;
@@ -100,12 +100,12 @@ export class FluidCanvas extends LitElement {
   private showParticles = true;
   private showGrid = false;
   private showVelocity = false;
-  private particleVelColor = false;
-  private velScale = 1.0;
+  private particleVelColor = true;
+  private velScale = 0.1;
   @state() private resSlider = 50;
   @state() private particlePercent = 100;
   @state() private paused = false;
-  @state() private gravitySlider = -9.81;
+  @state() private gravitySlider = -5.2;
 
   private get simHeight() { return 3.0 * this.resSlider / 100; }
   private get simWidth()  { return this.simHeight; }
@@ -226,8 +226,6 @@ export class FluidCanvas extends LitElement {
       }
     }
 
-    // Place obstacle outside domain initially
-    this.setObstacle(3.0, 2.0, true);
   }
 
   private setObstacle(x: number, y: number, reset: boolean) {
