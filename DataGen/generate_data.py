@@ -8,6 +8,9 @@ import argparse
 blender_path = "./blender-4.5.7-linux-x64/blender"
 ouput_dir = "./training_data/"
 
+blend_low = "./WaterSim_low.blend"
+blend_high = "./WaterSim_high_v2.blend"
+
 
 def random_position():
     return 4 * (random() - 0.5)
@@ -47,7 +50,7 @@ def generate():
         x2 = random_position()
         y2 = random_position()
 
-        file = "WaterSim_low_v2.blend"
+        file = blend_low
         print(f"Generating low {i} with positions: ({x1}, {y1}), ({x2}, {y2})")
         cmd = [
             f"{blender_path}",
@@ -81,7 +84,7 @@ def generate():
         ]
         subprocess.run(cmd)
 
-        file = "WaterSim_high_v2.blend"
+        file = blend_high
         print(f"Generating high {i} with positions: ({x1}, {y1}), ({x2}, {y2})")
         cmd = [
             f"{blender_path}",

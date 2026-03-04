@@ -1,3 +1,16 @@
 node_modules/
 dist/
 .turbo/
+__pycache__
+Training/pytorch-CycleGAN-and-pix2pix/
+Training/mise.toml
+DataGen/blender-4.5.7-linux-x64
+DataGen/**/*.png
+DataGen/**/*.blend1
+DataGen/config
+DataGen/data
+DataGen/cache*
+DataGen/guiding
+DataGen/mesh
+DataGen/noise
+DataGen/particles
