@@ -1,5 +1,5 @@
 import subprocess
-from random import random
+from random import random, seed
 import sys
 import os
 import download_bleder
@@ -13,6 +13,7 @@ blend_high = "./WaterSim_high_v2.blend"
 
 
 def random_position():
+    seed(42)
     return 4 * (random() - 0.5)
 
 
